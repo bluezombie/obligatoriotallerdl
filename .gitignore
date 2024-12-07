@@ -161,7 +161,8 @@ cython_debug/
 #  option (not recommended) you can uncomment the following to ignore the entire idea folder.
 #.idea/
 
-# Data from Kaggle
+# 2024-12-07 gco: Se ignoran archivos innecesarios para el repo
 /data
 /test
 /train
+*.zip
