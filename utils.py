@@ -87,6 +87,11 @@ def print_log(epoch, train_loss, val_loss):
         f"Epoch: {epoch + 1:03d} | Train Loss: {train_loss:.5f} | Val Loss: {val_loss:.5f}"
     )
 
+def print_log_unet(epoch, train_loss, val_loss, dice):
+    print(
+        f"Epoch: {epoch + 1:03d} | Train Loss: {train_loss:.5f} | Val Loss: {val_loss:.5f} | Dice: {dice:.5f}"
+    )
+
 def train(
     model,
     optimizer,
@@ -177,7 +182,7 @@ def train_unet(
     val_loader,
     device,
     epochs=10,
-    log_fn=print_log,
+    log_fn=print_log_unet,
     log_every=1,
 ):
     """
@@ -241,7 +246,7 @@ def train_unet(
 
         if log_fn is not None:  # si se pasa una funcion de log
             if (epoch + 1) % log_every == 0:  # loggeamos cada log_every epocas
-                log_fn(epoch, train_loss, val_loss)  # llamamos a la funcion de log
+                log_fn(epoch, train_loss, val_loss, dice)  # llamamos a la funcion de log
 
 
     return epoch_train_errors, epoch_val_errors, epoch_dice_errors
