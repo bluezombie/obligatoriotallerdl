@@ -55,8 +55,8 @@ def evaluate_unet(model, criterion, data_loader, device):
             # Calculamos el denominador del coeficiente de Dice
             denom += predictions.sum() + y.sum()
 
-            # Obtenemos el valor del coeficiente de Dice
-            dice = 2 * intersection / denom
+            # Obtenemos el valor del coeficiente de Dice (acumulado)
+            dice += 2 * intersection / denom
 
     return total_loss / len(data_loader), dice/len(data_loader)  # retornamos la perdida promedio y el dice promedio
 
@@ -205,7 +205,7 @@ def train_unet(
     """
     epoch_train_errors = []  # colectamos el error de traing para posterior analisis
     epoch_val_errors = []  # colectamos el error de validacion para posterior analisis
-    epoch_dice_errors = []
+    epoch_dice_values = [] # Colectamos la evolución del valor dice
 
 
     for epoch in range(epochs):  # loop de entrenamiento
@@ -241,7 +241,7 @@ def train_unet(
             model, criterion, val_loader, device
         )  # evaluamos el modelo en el conjunto de validacion
         epoch_val_errors.append(val_loss)  # guardamos la perdida de validacion
-        epoch_dice_errors.append(dice) # guardamos el dice de la época
+        epoch_dice_values.append(dice) # guardamos el dice de la época
 
 
         if log_fn is not None:  # si se pasa una funcion de log
@@ -249,7 +249,7 @@ def train_unet(
                 log_fn(epoch, train_loss, val_loss, dice)  # llamamos a la funcion de log
 
 
-    return epoch_train_errors, epoch_val_errors, epoch_dice_errors
+    return epoch_train_errors, epoch_val_errors, epoch_dice_values
 
 def plot_taining(train_errors, val_errors):
     # Graficar los errores
