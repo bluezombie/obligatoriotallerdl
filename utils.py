@@ -29,6 +29,36 @@ def evaluate(model, criterion, data_loader, device):
             total_loss += criterion(output, y).item()  # acumulamos la perdida
     return total_loss / len(data_loader)  # retornamos la perdida promedio
 
+def evaluate_unet(model, criterion, data_loader, device):
+    dice = 0.
+    model.eval()  # ponemos el modelo en modo de evaluacion
+    total_loss = 0  # acumulador de la perdida
+    with torch.no_grad():  # deshabilitamos el calculo de gradientes
+        for x, y in data_loader:  # iteramos sobre el dataloader
+            correct = 0
+            intersection = 0
+            denom = 0
+            total = 0
+            x = x.to(device=device, dtype = torch.float32)  # movemos los datos al dispositivo
+            y = y.to(device=device, dtype = torch.long).squeeze(1)  # movemos los datos al dispositivo
+            scores = model(x)  
+            total_loss += criterion(scores, y).item()  # acumulamos la perdida
+            # Calculamos estadísticas
+            predictions = torch.argmax(scores, dim=1) # Obtenemos coordenadas de las predicciones
+            correct += (predictions == y).sum() # Sumamos el número de predicciones correctas
+            total += torch.numel(predictions) # Contamos el número total de predicciones
+
+            # Calculamos el coeficiente de Dice
+            # Al multiplicar las predicciones por los valores reales, obtenemos la intersección
+            intersection += (predictions * y).sum()
+
+            # Calculamos el denominador del coeficiente de Dice
+            denom += predictions.sum() + y.sum()
+
+            # Obtenemos el valor del coeficiente de Dice
+            dice = 2 * intersection / denom
+
+    return total_loss / len(data_loader), dice/len(data_loader)  # retornamos la perdida promedio y el dice promedio
 
 class EarlyStopping:
     def __init__(self, patience=5):
@@ -137,6 +167,8 @@ def train(
 
     return epoch_train_errors, epoch_val_errors
 
+
+
 def train_unet(
     model,
     optimizer,
@@ -144,8 +176,6 @@ def train_unet(
     train_loader,
     val_loader,
     device,
-    do_early_stopping=True,
-    patience=5,
     epochs=10,
     log_fn=print_log,
     log_every=1,
@@ -160,7 +190,6 @@ def train_unet(
         train_loader (torch.utils.data.DataLoader): DataLoader que proporciona los datos de entrenamiento.
         val_loader (torch.utils.data.DataLoader): DataLoader que proporciona los datos de validación.
         device (str): El dispositivo donde se ejecutará el entrenamiento.
-        patience (int): Número de épocas a esperar después de la última mejora en val_loss antes de detener el entrenamiento (default: 5).
         epochs (int): Número de épocas de entrenamiento (default: 10).
         log_fn (function): Función que se llamará después de cada log_every épocas con los argumentos (epoch, train_loss, val_loss) (default: None).
         log_every (int): Número de épocas entre cada llamada a log_fn (default: 1).
@@ -171,14 +200,16 @@ def train_unet(
     """
     epoch_train_errors = []  # colectamos el error de traing para posterior analisis
     epoch_val_errors = []  # colectamos el error de validacion para posterior analisis
-    if do_early_stopping:
-        early_stopping = EarlyStopping(
-            patience=patience
-        )  # instanciamos el early stopping
+    epoch_dice_errors = []
+
 
     for epoch in range(epochs):  # loop de entrenamiento
         model.train()  # ponemos el modelo en modo de entrenamiento
         train_loss = 0  # acumulador de la perdida de entrenamiento
+
+        train_correct_num = 0
+        train_total = 0
+        train_cost_acum = 0.
         for x, y in train_loader:
             x = x.to(device=device, dtype=torch.float32)  # movemos los datos al dispositivo
             y = y.to(device=device, dtype=torch.long).squeeze(1)  # movemos los datos al dispositivo
@@ -192,30 +223,28 @@ def train_unet(
 
             batch_loss.backward()  # backpropagation
             optimizer.step()  # actualizamos los pesos
-
+            
+            # Calculamos estadísticas
+            train_predictions = torch.argmax(output, dim=1)
+            train_correct_num += (train_predictions == y).sum() # Sumamos el número de predicciones correctas
+            train_total += torch.numel(train_predictions) # Contamos el número total de predicciones
             train_loss += batch_loss.item()  # acumulamos la perdida
 
         train_loss /= len(train_loader)  # calculamos la perdida promedio de la epoca
         epoch_train_errors.append(train_loss)  # guardamos la perdida de entrenamiento
-        val_loss = evaluate(
+        val_loss, dice = evaluate_unet(
             model, criterion, val_loader, device
         )  # evaluamos el modelo en el conjunto de validacion
         epoch_val_errors.append(val_loss)  # guardamos la perdida de validacion
+        epoch_dice_errors.append(dice) # guardamos el dice de la época
 
-        if do_early_stopping:
-            early_stopping(val_loss)  # llamamos al early stopping
 
         if log_fn is not None:  # si se pasa una funcion de log
             if (epoch + 1) % log_every == 0:  # loggeamos cada log_every epocas
                 log_fn(epoch, train_loss, val_loss)  # llamamos a la funcion de log
 
-        if do_early_stopping and early_stopping.early_stop:
-            print(
-                f"Detener entrenamiento en la época {epoch}, la mejor pérdida fue {early_stopping.best_score:.5f}"
-            )
-            break
 
-    return epoch_train_errors, epoch_val_errors
+    return epoch_train_errors, epoch_val_errors, epoch_dice_errors
 
 def plot_taining(train_errors, val_errors):
     # Graficar los errores
