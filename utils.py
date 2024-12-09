@@ -30,9 +30,13 @@ def evaluate(model, criterion, data_loader, device):
     return total_loss / len(data_loader)  # retornamos la perdida promedio
 
 def evaluate_unet(model, criterion, data_loader, device):
+    intersection = 0
+    denom = 0
+    total = 0
     dice = 0.
     model.eval()  # ponemos el modelo en modo de evaluacion
     total_loss = 0  # acumulador de la perdida
+    model.to(device)  # movemos el modelo al dispositivo
     with torch.no_grad():  # deshabilitamos el calculo de gradientes
         for x, y in data_loader:  # iteramos sobre el dataloader
             correct = 0
@@ -53,12 +57,12 @@ def evaluate_unet(model, criterion, data_loader, device):
             intersection += (predictions * y).sum()
 
             # Calculamos el denominador del coeficiente de Dice
-            denom += predictions.sum() + y.sum()
+            denom += (predictions + y).sum()
 
             # Obtenemos el valor del coeficiente de Dice (acumulado)
-            dice += 2 * intersection / denom
+            dice = (2 * intersection) / denom
 
-    return total_loss / len(data_loader), dice/len(data_loader)  # retornamos la perdida promedio y el dice promedio
+    return total_loss / len(data_loader), correct/total, dice  # retornamos la perdida, accuracy y el dice promedio
 
 class EarlyStopping:
     def __init__(self, patience=5):
@@ -87,9 +91,9 @@ def print_log(epoch, train_loss, val_loss):
         f"Epoch: {epoch + 1:03d} | Train Loss: {train_loss:.5f} | Val Loss: {val_loss:.5f}"
     )
 
-def print_log_unet(epoch, train_loss, val_loss, dice):
+def print_log_unet(epoch, train_loss, val_loss, accuracy, dice):
     print(
-        f"Epoch: {epoch + 1:03d} | Train Loss: {train_loss:.5f} | Val Loss: {val_loss:.5f} | Dice: {dice:.5f}"
+        f"Epoch: {epoch + 1:03d} | Train Loss: {train_loss:.5f} | Val Loss: {val_loss:.5f} | Accuracy: {accuracy:.5f} | Dice: {dice:.5f}"
     )
 
 def train(
@@ -206,6 +210,7 @@ def train_unet(
     epoch_train_errors = []  # colectamos el error de traing para posterior analisis
     epoch_val_errors = []  # colectamos el error de validacion para posterior analisis
     epoch_dice_values = [] # Colectamos la evolución del valor dice
+    epoc_acc = [] # Colectamos la evolución de la precisión
 
 
     for epoch in range(epochs):  # loop de entrenamiento
@@ -219,34 +224,45 @@ def train_unet(
             x = x.to(device=device, dtype=torch.float32)  # movemos los datos al dispositivo
             y = y.to(device=device, dtype=torch.long).squeeze(1)  # movemos los datos al dispositivo
 
-            optimizer.zero_grad()  # reseteamos los gradientes
-
             output = model(x)  # forward pass (prediccion)
             batch_loss = criterion(
                 output, y
             )  # calculamos la perdida con la salida esperada
-
+            optimizer.zero_grad()  # reseteamos los gradientes
             batch_loss.backward()  # backpropagation
             optimizer.step()  # actualizamos los pesos
             
             # Calculamos estadísticas
+            # Al obtener 2 canales de salida, cada uno posee la probabilidad de pertenecer
+            # a la clase o no. Por lo tanto, cada canal va a representar una clase.
+            # Al obtener el "argmax", estamos indicando que clase tiene la mayor probabilidad
+            # Y por tanto, es la predicción.
             train_predictions = torch.argmax(output, dim=1)
+            print(train_predictions.shape)
             train_correct_num += (train_predictions == y).sum() # Sumamos el número de predicciones correctas
+            print(f"Correctas: {train_correct_num}")
             train_total += torch.numel(train_predictions) # Contamos el número total de predicciones
             train_loss += batch_loss.item()  # acumulamos la perdida
 
         train_loss /= len(train_loader)  # calculamos la perdida promedio de la epoca
         epoch_train_errors.append(train_loss)  # guardamos la perdida de entrenamiento
-        val_loss, dice = evaluate_unet(
-            model, criterion, val_loader, device
-        )  # evaluamos el modelo en el conjunto de validacion
-        epoch_val_errors.append(val_loss)  # guardamos la perdida de validacion
-        epoch_dice_values.append(dice) # guardamos el dice de la época
+        
+        train_acc = float(train_correct_num / train_total)
+        epoc_acc.append(train_acc)
+
+        # val_loss, accuracy, dice = evaluate_unet(
+        #     model, criterion, val_loader, device
+        # )  # evaluamos el modelo en el conjunto de validacion
+        # epoch_val_errors.append(val_loss)  # guardamos la perdida de validacion
+        # epoch_dice_values.append(dice) # guardamos el dice de la época
 
 
         if log_fn is not None:  # si se pasa una funcion de log
             if (epoch + 1) % log_every == 0:  # loggeamos cada log_every epocas
-                log_fn(epoch, train_loss, val_loss, dice)  # llamamos a la funcion de log
+                val_loss, accuracy, dice = evaluate_unet(
+                    model, criterion, val_loader, device
+                )
+                log_fn(epoch, train_loss, val_loss, accuracy, dice)  # llamamos a la funcion de log
 
 
     return epoch_train_errors, epoch_val_errors, epoch_dice_values
