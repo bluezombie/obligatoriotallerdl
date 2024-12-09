@@ -238,9 +238,7 @@ def train_unet(
             # Al obtener el "argmax", estamos indicando que clase tiene la mayor probabilidad
             # Y por tanto, es la predicción.
             train_predictions = torch.argmax(output, dim=1)
-            print(train_predictions.shape)
             train_correct_num += (train_predictions == y).sum() # Sumamos el número de predicciones correctas
-            print(f"Correctas: {train_correct_num}")
             train_total += torch.numel(train_predictions) # Contamos el número total de predicciones
             train_loss += batch_loss.item()  # acumulamos la perdida
 
