@@ -99,7 +99,7 @@ class EarlyStoppingForUnet:
         self.early_stop = False
 
     def __call__(self, dice):
-        if dice > self.best_score:
+        if dice < self.best_score:
             self.counter += 1
             if self.counter >= self.patience:
                 self.early_stop = True
