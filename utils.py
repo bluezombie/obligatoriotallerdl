@@ -85,6 +85,27 @@ class EarlyStopping:
             self.best_score = val_loss
             self.counter = 0
 
+class EarlyStoppingForUnet:
+    def __init__(self, patience=5):
+        """
+        Args:
+            patience (int): Cuántas épocas esperar después de la última mejora.
+            Considera el dice como parámetro para parar el entrenamiento.
+        """
+        self.patience = patience
+        self.counter = 0
+        self.best_score = float("inf")
+        self.val_loss_min = float("inf")
+        self.early_stop = False
+
+    def __call__(self, dice):
+        if dice > self.best_score:
+            self.counter += 1
+            if self.counter >= self.patience:
+                self.early_stop = True
+        else:
+            self.best_score = dice
+            self.counter = 0
 
 def print_log(epoch, train_loss, val_loss):
     print(
@@ -185,6 +206,8 @@ def train_unet(
     train_loader,
     val_loader,
     device,
+    do_early_stopping=True,
+    patience=5,
     epochs=10,
     log_fn=print_log_unet,
     log_every=1,
@@ -212,6 +235,10 @@ def train_unet(
     epoch_dice_values = [] # Colectamos la evolución del valor dice
     epoc_acc = [] # Colectamos la evolución de la precisión
 
+    if do_early_stopping:
+        early_stopping = EarlyStoppingForUnet(
+            patience=patience
+        )  # instanciamos el early stopping
 
     for epoch in range(epochs):  # loop de entrenamiento
         model.train()  # ponemos el modelo en modo de entrenamiento
@@ -248,19 +275,23 @@ def train_unet(
         train_acc = float(train_correct_num / train_total)
         epoc_acc.append(train_acc)
 
-        # val_loss, accuracy, dice = evaluate_unet(
-        #     model, criterion, val_loader, device
-        # )  # evaluamos el modelo en el conjunto de validacion
-        # epoch_val_errors.append(val_loss)  # guardamos la perdida de validacion
-        # epoch_dice_values.append(dice) # guardamos el dice de la época
+        val_loss, accuracy, dice = evaluate_unet(
+                    model, criterion, val_loader, device
+                )
+        
+        epoch_val_errors.append(val_loss)  # guardamos la perdida de validacion
+        epoch_dice_values.append(dice) # guardamos el dice de la época
 
 
         if log_fn is not None:  # si se pasa una funcion de log
             if (epoch + 1) % log_every == 0:  # loggeamos cada log_every epocas
-                val_loss, accuracy, dice = evaluate_unet(
-                    model, criterion, val_loader, device
-                )
                 log_fn(epoch, train_loss, val_loss, accuracy, dice)  # llamamos a la funcion de log
+
+        if do_early_stopping and early_stopping.early_stop:
+            print(
+                f"Detener entrenamiento en la época {epoch}, la mejor pérdida fue {early_stopping.best_score:.5f}"
+            )
+            break
 
 
     return epoch_train_errors, epoch_val_errors, epoch_dice_values
